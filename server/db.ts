@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, events, newsletterSignups, contactSubmissions, memberships, InsertNewsletterSignup, InsertContactSubmission } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,57 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+export async function getUpcomingEvents() {
+  const db = await getDb();
+  if (!db) return [];
+  
+  const now = new Date();
+  const result = await db
+    .select()
+    .from(events)
+    .where(gte(events.date, now))
+    .orderBy(events.date);
+  
+  return result;
+}
+
+export async function createNewsletterSignup(data: InsertNewsletterSignup) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  try {
+    const result = await db.insert(newsletterSignups).values(data);
+    return result;
+  } catch (error: any) {
+    if (error.code === "ER_DUP_ENTRY") {
+      // Email already exists, update subscription status
+      await db
+        .update(newsletterSignups)
+        .set({ subscribed: 1, updatedAt: new Date() })
+        .where(eq(newsletterSignups.email, data.email!));
+      return { success: true };
+    }
+    throw error;
+  }
+}
+
+export async function createContactSubmission(data: InsertContactSubmission) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(contactSubmissions).values(data);
+  return result;
+}
+
+export async function getUserMembership(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  
+  const result = await db
+    .select()
+    .from(memberships)
+    .where(eq(memberships.userId, userId))
+    .limit(1);
+  
+  return result.length > 0 ? result[0] : null;
+}
